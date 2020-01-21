@@ -1,0 +1,9 @@
+name=Grunt
+team=enemy
+icon=BasidBadGuy.png
+behavior=aggressive
+abilities=Sword
+size=80
+speed=120
+health=150
+corpse=BasicCorpse.png

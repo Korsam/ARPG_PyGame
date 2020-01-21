@@ -1,0 +1,15 @@
+name=AcidPit
+targetingMode=ground
+travelIcon=Assets/AcidTrail.png
+baseDamage=40
+baseDuration=4
+baseRadius=80
+baseSpeed=300
+baseCost=100
+baseCooldown=10
+baseSoundRadiusMultiplier=4
+armorEffect=0.5
+evasionEffect=0.0
+shape=circle
+team=all
+animation=AcidPit

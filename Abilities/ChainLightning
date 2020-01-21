@@ -1,0 +1,12 @@
+name=ChainLightning
+targetingMode=ground
+travelIcon=Assets/BallLightning.png
+baseDamage=120
+baseRadius=200
+baseSpeed=500
+baseCost=100
+baseCooldown=10
+baseSoundRadiusMultiplier=8
+shape=chain
+team=enemy
+animation=ChainLightning

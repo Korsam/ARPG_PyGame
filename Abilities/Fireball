@@ -1,0 +1,12 @@
+name=Fireball
+targetingMode=ground
+travelIcon=Assets/FireTrail.png
+baseDamage=100
+baseRadius=100
+baseSpeed=250
+baseCost=100
+baseCooldown=10
+baseSoundRadiusMultiplier=10
+shape=circle
+team=all
+animation=Fireball

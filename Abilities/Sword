@@ -1,0 +1,15 @@
+name=Sword
+targetingMode=ground
+travelIcon=Assets/Sword.png
+baseDamage=50
+baseRadius=20
+baseSpeed=1000
+baseCost=0
+baseCooldown=1
+baseSoundRadiusMultiplier=5
+scaleSpeed=0.0
+scaleApplication=0.0
+shape=circle
+team=enemy
+animation=Sword
+maxRange=100
