@@ -1,5 +1,0 @@
-sizeX=20
-sizeY=40
-image=BigWall.png
-collidable=True
-baseLife=500

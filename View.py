@@ -3,21 +3,37 @@ import pygame.freetype
 import math
 import random
 import time
-from Model import Ability, Character, Player, Item, Map, Drawable, Projectile, Effect
+from Model import Ability, Character, Player, Item, Map, Drawable, Projectile, Effect, Loadable
+import os
 
 pygame.init()
 
-display_width = 800
-display_height = 600
+display_width = 1920
+display_height = 1080
 
-gameDisplay = pygame.display.set_mode((display_width,display_height))
+gameDisplay = pygame.display.set_mode((display_width,display_height), pygame.FULLSCREEN)
 pygame.display.set_caption('ARPG')
 
 clock = pygame.time.Clock()
 running = True
 
-testMap = Map('Assets/background.png')
-level1 = Map("Assets/Maps/Level1.png")
+# dictionary of all Loadables from the objects folder
+loadedObjects = {}
+for objectFile in os.listdir("Assets/Objects"):
+    newObject = Loadable("Assets/Objects/"+objectFile)
+    newName = newObject.name
+    print("Loaded object file", objectFile)#, "for ability", newName)
+    loadedObjects[newName] = newObject
+# dictionary of all Loadables from the characters folder
+loadedCharacters = {}
+for characterFile in os.listdir("Assets/Characters"):
+    newCharacter = Loadable("Assets/Characters/"+characterFile)
+    newName = newCharacter.name
+    print("Loaded character file", characterFile, "named", newName)
+    loadedCharacters[newName] = newCharacter
+
+#testMap = Map('Assets/background.png')
+level1 = Map("Assets/Maps/Level1.txt", loadedObjects, loadedCharacters)
 
 # valid key vars
 keyW = False
@@ -29,7 +45,15 @@ keyD = False
 keyQ = False
 keyR = False
 
-# initialize testing fireball
+# initialize abilities
+# look through Abilities folder and create a dictionary entry for each loaded ability file found
+abilityDictionary = {}
+for abilityFile in os.listdir("Abilities"):
+    newAbility = Ability("Abilities/"+abilityFile)
+    newName = newAbility.name
+    print("Loaded ability file", abilityFile)#, "for ability", newName)
+    abilityDictionary[newName] = newAbility
+# TODO remove hard coded ability references, rely on character loadout to determine which abilities are available (player can just cast first loaded ability until UI catches back up)
 testFireBall = Ability("Abilities/Fireball")
 testSword = Ability("Abilities/Sword")
 acidPit = Ability("Abilities/AcidPit")
@@ -42,8 +66,11 @@ playerSwordTime = 0.0
 
 currentMap = level1
 
-testChar = Character('Assets/testChar.png', currentMap.loadX, currentMap.loadY, "Jeff", "Player")
-testChar.move(80, 160)
+#playerCharacter = Loadable("Assets/Characters/TestChar.txt")
+#evilGrunt = Loadable("Assets/Characters/EnemyGrunt.txt")    # TODO replace hard-coded loadables with dynamic dictionary entries
+#print("Loaded characters:", loadedCharacters)
+testChar = Character(loadedCharacters["Jeff"], 80, 160) # TODO player control should be established via team or name matching player current character field TBD
+#testChar.move(80, 160)
 currentMap.addDraw(testChar)
 manaBarBase = Drawable("Assets/ManaBarBase.png", 0, 40)
 lifeBarBase = Drawable("Assets/LifeBarBase.png", 0, 0)
@@ -51,17 +78,18 @@ manaBarFill = Drawable("Assets/ManaBarFull.png", 0, 40)
 lifeBarFill = Drawable("Assets/LifeBarFull.png", 0, 0)
 
 # science values
-testChar.toughness += 5
-testChar.evasion += 5
-testChar.efficiency += 5
-testChar.mana += 5
+#testChar.toughness += 5
+#testChar.evasion += 5
+#testChar.efficiency += 5
+testChar.life += 20
+testChar.mana += 20 # 20 seems like a pretty good cap for defensive stat totals, good to test extreme specialization vs distributed builds
 
 menu=True
-menuBackground = pygame.image.load("Assets/MenuBackground.png")
-continueButton = pygame.image.load("Assets/Continue.png")
-optionsButton = pygame.image.load("Assets/Options.png")
-exitButton = pygame.image.load("Assets/Exit.png")
-gameTitle = pygame.image.load("Assets/GameTitle.png")
+menuBackground = pygame.image.load("Assets/MenuBackground.png").convert_alpha()
+continueButton = pygame.image.load("Assets/Continue.png").convert_alpha()
+optionsButton = pygame.image.load("Assets/Options.png").convert_alpha()
+exitButton = pygame.image.load("Assets/Exit.png").convert_alpha()
+gameTitle = pygame.image.load("Assets/GameTitle.png").convert_alpha()
 
 badGuyTimer = 5.0
 
@@ -114,7 +142,6 @@ while running:
 
     # put black background in first for cases where map image has been panned offscreen partly
     gameDisplay.fill((0,0,0))
-
     # if on menu, draw its elements
     if menu:
         gameDisplay.blit(menuBackground, (0,0))
@@ -138,6 +165,7 @@ while running:
                         # continue button
                         # for now just load testMap
                         # TODO implement map loading
+
                         currentMap = level1
                         menu = False
                     if mouseY >= 325 and mouseY <= 375:
@@ -150,9 +178,8 @@ while running:
     else:
 
     # if map is loaded, go into map code
-
         # can do game logic here
-        frameTime = clock.tick(60)/1000.0  # get time since last frame, ALSO tell pygame to limit FPS at 60
+        frameTime = clock.tick(60)/1000.0  # get time since last frame, ALSO tell pygame to limit FPS at 60 TODO make configurable
         #print(frameTime)
 
         playerSpeed = testChar.getMoveSpeed()  #testChar.baseMove * (1.1 ** testChar.movement)
@@ -214,10 +241,10 @@ while running:
 
         #print("Char", testChar.speed)
         # spawn some baddies occasionally
-        badGuyTimer -= frameTime
+        #badGuyTimer -= frameTime   # TODO uncomment to activate endless spawning
         if badGuyTimer <= 0.0:
             # spawn a bad guy, reset timer to a random number between 5 and 20
-            badGuyChar = Character("Assets/BasicEvilDude.png", random.uniform(50,750), random.uniform(100,550), "MrEvilMan", "Hostile")
+            badGuyChar = Character(loadedCharacters["Grunt"], random.uniform(50,750), random.uniform(100,550))
             # need to check if this guy is too close to an existing character (player included)
             tooClose = False
             for draw in currentMap.draws:
@@ -278,13 +305,11 @@ while running:
                     targetX = draw.locX
                     targetY = draw.locY
                     newTrigger = None
-                    # figure out which ability this is. TODO dynamic solution?
-                    if abilityName == "Fireball":
-                        newTrigger = testFireBall.trigger(draw.caster, targetX, targetY, currentMap)
-                    if abilityName == "Sword":
-                        newTrigger = testSword.trigger(draw.caster, targetX, targetY, currentMap)
-                    if abilityName == "AcidPit":
-                        newTrigger = acidPit.trigger(draw.caster, targetX, targetY, currentMap)
+                    # if ability is valid (atm just in the dictionary) trigger effects
+                    if abilityName in abilityDictionary.keys():
+                        newTrigger = abilityDictionary[abilityName].trigger(draw.caster, targetX, targetY, currentMap)
+                    else:
+                        raise Exception("Unknown ability triggered:"+abilityName)
                     # remove projectile, might not be safe to do mid-loop TODO investigate
                     if newTrigger is not None:
                         currentMap.addDraw(newTrigger)
@@ -333,10 +358,14 @@ while running:
                         else:
                             currentMap.addDraw(newFire)
                             draw.age -= random.uniform(1, 5)
-                continue
-            gameDisplay.blit(draw.image, (offX+int(draw.locX-draw.boundX/2), offY+int(draw.locY-draw.boundY/2)))
+                #continue
+            else:
+                gameDisplay.blit(draw.image, (offX+int(draw.locX-draw.boundX/2), offY+int(draw.locY-draw.boundY/2)))
+            #print("Draw age", draw.age)
             draw.age += frameTime
+            #print("Frametime", frameTime, "total", draw.age)
             if draw.limit is not None:
+                #print("Draw limit", draw.limit, "age", draw.age)
                 if draw.age >= draw.limit:
                     currentMap.draws.remove(draw)
         for draw in characterDraws:
@@ -347,40 +376,43 @@ while running:
 
         # life and mana regen, continous effects calculations
         if testChar.currentMana < testChar.getMaxMana():
-            # regen 1% of missing mana per second, with a minimum of 1 mana regen per second
-            testChar.currentMana += frameTime * max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
+            # regen 0.1% of missing mana per second per point in mana
+            testChar.currentMana += frameTime * (testChar.getMaxMana()-testChar.currentMana) * 0.001 * testChar.mana #max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
         if testChar.currentMana > testChar.getMaxMana():
             testChar.currentMana = testChar.getMaxMana()
         # life
         if testChar.currentLife < testChar.getMaxLife():
-            testChar.currentLife += frameTime * max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
+            testChar.currentLife += frameTime * (testChar.getMaxLife() - testChar.currentLife) * 0.001 * testChar.life #max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
         if testChar.currentLife > testChar.getMaxLife():
             testChar.currentLife = testChar.getMaxLife()
-        if testChar.currentLife <= 0.0:
+        if not testChar.alive:
             # you are dead, dead, dead
-            testChar.currentLife = 0.0
             deadSurface, deadBox = font.render(str("YOU ARE DEAD"), (200, 50, 50))
             gameDisplay.blit(deadSurface, (display_width/2-50, display_height/2-25))
-            time.sleep(2)
-            menu = True
+            #print("Final score:", int(aliveTime))
+            #time.sleep(2)
+            #menu = True
 
         # draw HUD
-        gameDisplay.blit(manaBarBase.image, (manaBarBase.locX, manaBarBase.locY))
+        if testChar.getMaxMana() > 0.0:
+            gameDisplay.blit(manaBarBase.image, (manaBarBase.locX, manaBarBase.locY))
+            manaFillImage = pygame.transform.scale(manaBarFill.image, (int(160.0*max(0,testChar.currentMana)/(testChar.getMaxMana())), 40))  # TODO update for dynamic asset scaling
+            gameDisplay.blit(manaFillImage, (manaBarBase.locX, manaBarBase.locY))
+            manaTextSurface, manaTextBox = font.render(str(int(testChar.currentMana)), (0,0,0))   # current/max str(int(testChar.currentMana))+"/"+str(int(testChar.baseMana*1.1**testChar.mana))
+            gameDisplay.blit(manaTextSurface, (0,70))
+
         gameDisplay.blit(lifeBarBase.image, (lifeBarBase.locX, lifeBarBase.locY))
         # fill in bars based on percent current
-        manaFillImage = pygame.transform.scale(manaBarFill.image, (int(160.0*testChar.currentMana/(testChar.getMaxMana())), 40))  # TODO update for dynamic asset scaling
-        lifeFillImage = pygame.transform.scale(lifeBarFill.image, (int(160.0 * testChar.currentLife / (testChar.getMaxLife())), 40))
-        gameDisplay.blit(manaFillImage, (manaBarBase.locX, manaBarBase.locY))
+        lifeFillImage = pygame.transform.scale(lifeBarFill.image, (int(160.0 * max(0,testChar.currentLife) / (testChar.getMaxLife())), 40))
         gameDisplay.blit(lifeFillImage, (lifeBarBase.locX, lifeBarBase.locY))
         # numeric values for life and mana, just current values since the bar establishes percentage
-        manaTextSurface, manaTextBox = font.render(str(int(testChar.currentMana)), (0,0,0))   # current/max str(int(testChar.currentMana))+"/"+str(int(testChar.baseMana*1.1**testChar.mana))
-        gameDisplay.blit(manaTextSurface, (0,70))
         lifeTextSurface, lifeTextBox = font.render(str(int(testChar.currentLife)), (0, 0, 0))    # current/max str(int(testChar.currentHP)) + "/" + str(int(testChar.baseHP * 1.1 ** testChar.life)
         gameDisplay.blit(lifeTextSurface, (0, 30))
         # draw player
         #gameDisplay.blit(testChar.image, (testChar.locX, testChar.locY))
         aliveTime += frameTime
-        aliveTimeSurface, aliveTimeBox = font.render(str(int(aliveTime)), (45, 255, 0))    # current/max str(int(testChar.currentHP)) + "/" + str(int(testChar.baseHP * 1.1 ** testChar.life)
+        frameRate = 1.0/frameTime
+        aliveTimeSurface, aliveTimeBox = font.render(str(int(frameRate)), (45, 255, 0))    # current/max str(int(testChar.currentHP)) + "/" + str(int(testChar.baseHP * 1.1 ** testChar.life)
         gameDisplay.blit(aliveTimeSurface, (0, 590))
 
         # frame cleanup section
@@ -391,6 +423,5 @@ while running:
 
     pygame.display.update()
 
-print("Final score:", int(aliveTime))
 pygame.quit()
 quit()

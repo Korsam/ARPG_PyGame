@@ -1,1 +1,16 @@
-objectName=locX,locY
+width=2000
+height=2000
+loadX=150
+loadY=150
+background=Level1.png
+
+BigWall=100,100
+BigWall=150,100
+BigWall=250,100
+BigWall=400,100
+BigWall=600,100
+BigWall=850,100
+BigWall=1150,100
+BigWall=1500,100
+
+Enemy AI should be configured with an 800 range visibility, plus a line of sight check with collidables (doesn't need to be instantaneous, or every frame)
