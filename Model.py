@@ -207,12 +207,12 @@ class Drawable():
             self.alpha = False  # TODO store loaded images from animation folder as specific vars (no loading after initialization, could inherit loaded images from Loadable)
             # TODO reconfigure drawable use cases to always use a loadable which has preloaded and converted images
             self.image = pygame.image.load(dat).convert()
-            self.locX = x
-            self.locY = y
+            self.locX = float(x)
+            self.locY = float(y)
             self.boundX, self.boundY = self.image.get_size()
             self.oldX = 0
             self.oldY = 0
-
+            self.shape = "rect"
             # things that need to be set for consistency since this is a shared constructor  TODO standardize usage (having multiple constructors is a pain to maintain, at least in this form)
             self.roof = False
             self.vulnerable = False
@@ -230,12 +230,12 @@ class Drawable():
             self.scale = 1.0
             self.age = 0.0
             self.limit = None
-            self.locX = x
-            self.locY = y
+            self.locX = float(x)
+            self.locY = float(y)
             self.oldX = x
             self.oldY = y
-
             # fields from loadable that are definitely here
+            self.shape = dat.shape
             self.baseLife = dat.baseLife
             self.baseMana = dat.baseMana
             self.baseToughness = dat.baseToughness
@@ -249,14 +249,18 @@ class Drawable():
             self.alpha = dat.alpha
             imgLocation = "None"
             if self.animation != "None":
-                self.image = "Assets/Animations/"+self.animation+"/Base.png"
+                imgLocation = "Assets/Animations/"+self.animation+"/Base.png"
             else:
-                self.image = dat.image
+                imgLocation = dat.image
             if self.alpha:
                 self.image = pygame.image.load(imgLocation).convert_alpha()
             else:
                 self.image = pygame.image.load(imgLocation).convert()
             self.boundX, self.boundY = self.image.get_size()
+
+        # starting velocities should always be zero at this stage, projectile and character classes can change this after super is called
+        self.velX = 0.0
+        self.velY = 0.0
 
     def setScale(self, scal):
         scal = int(scal)
@@ -275,11 +279,17 @@ class Drawable():
             self.image = pygame.image.load(filename).convert()
         self.setScale(self.scale)
 
-    def move(self, newX, newY):
+    def move(self, frameTime):
         self.oldX = self.locX
         self.oldY = self.locY
-        self.locX = int(newX)
-        self.locY = int(newY)    # TODO success states?
+        self.locX += frameTime * self.velX
+        self.locY += frameTime * self.velY
+
+    def forceMove(self, newX, newY):
+        self.oldX = self.locX
+        self.oldY = self.locY
+        self.locX = newX
+        self.locY = newY
 
 class Effect(Drawable):
     def __init__(self, img, x, y, caster, ability, map):
@@ -322,30 +332,36 @@ class Projectile(Drawable):
         self.caster = caster
         self.volatile = volatile
 
-    def moveProj(self, time):
-        # return false if proj keeps moving, true if detonating
-        actualSpeed = self.speed * time * BASE ** (self.caster.speed * self.scaleSpeed)
+    def targetProj(self, time):
+        # return false if proj keeps moving, true if detonating. Adjusts projectile velocity to match target
+        actualSpeed = self.speed * BASE ** (self.caster.speed * self.scaleSpeed)
         #print("Proj",self.caster.speed)
+        # TODO option for projectile to target a draw, maybe even require such and use a telegraph icon for this
         deltaX = self.targetX - self.locX
         deltaY = self.targetY - self.locY
         targetDist = math.sqrt(deltaX**2+deltaY**2)
         # check if at destination this frame
-        if targetDist <= actualSpeed:
-            # you have arrived at your destination
-            self.move(self.targetX, self.targetY)
-            #self.locX = self.targetX
-            #self.locY = self.targetY
-            # trigger ability effects at target location
-            return True
+        # split actualSpeed up into X and Y components, add to locX and locY accordingly
+        if targetDist > 0.0:
+            self.velX = deltaX/targetDist * actualSpeed
+            self.velY = deltaY/targetDist * actualSpeed
         else:
-            # split actualSpeed up into X and Y components, add to locX and locY accordingly
-            self.locX += deltaX/targetDist * actualSpeed
-            self.locY += deltaY/targetDist * actualSpeed
+            self.velX = 0.0
+            self.velY = 0.0
 
         # check if colliding this frame (only for volatile)
         if self.volatile:
             # collision check time! TODO implement
             pass
+
+        if targetDist <= actualSpeed * time:
+            # you have arrived at your destination
+            #self.move(self.targetX, self.targetY)
+            #self.locX = self.targetX
+            #self.locY = self.targetY
+            # trigger ability effects at target location
+            return True
+
         return False
 
 
@@ -375,8 +391,9 @@ class Character(Drawable):
         self.evadeReset = 0.2   # how long to show evade image before switching back
         self.recentEvade = self.evadeReset  # how long has it been since the last evade, defaults to max render time
 
+        #super().__init__(loaded, x, y, mode="load")
         super().__init__(img, x, y)
-
+        self.collidable = loaded.collidable
         self.name = loaded.name
         self.team = loaded.team
         # items
@@ -439,8 +456,11 @@ class Character(Drawable):
             self.equipped.pop(slot)
     def terminate(self):
         self.alive = False
+        self.currentLife = 0.0
         #self.image = pygame.image.load("Assets/DefaultCorpse.png")
         self.setLimit(5.0)
+        self.velX = 0.0
+        self.velY = 0.0
         #print(self.name,"was killed. New limit", self.limit)
 
     def getMaxMana(self):
@@ -465,7 +485,6 @@ class Character(Drawable):
                     self.recentEvade = 0.0
             self.currentLife -= damageDealt
             if self.currentLife <= 0.0:
-                self.currentLife = 0.0
                 self.terminate()
             #print("Dealt", damageDealt, "to", self.name, "Would have been", amount)
         else:
@@ -484,12 +503,12 @@ class Character(Drawable):
                 diffX = self.oldX - self.locX
                 diffY = self.oldY - self.locY
                 #print(diffX, "base", self.getMoveSpeed()*frameTime, "right", self.getMoveSpeed() * -1.2 * frameTime)
-                if diffX < self.getMoveSpeed() * -1.2 * frameTime:  # percent movement threshold is above 1 courtesy of player movespeed bonus TODO reorganize
+                if diffX < 0.0:#diffX < self.getMoveSpeed() * -1.2 * frameTime:  # percent movement threshold is above 1 courtesy of player movespeed bonus TODO reorganize
                     self.setImage(self.rightImage)
-                elif diffX > self.getMoveSpeed() * 1.2 * frameTime:
+                elif diffX > 0.0:#diffX > self.getMoveSpeed() * 1.2 * frameTime:
                     self.setImage(self.leftImage)
                 else:
-                    self.setImage(self.baseImage)
+                    self.setImage(self.baseImage)   # TODO retool image switching such that images are already loaded into pygame
         else:
             # alive is False
             #print(self.name,"is dead with limit", self.limit, "and age", self.age)
@@ -543,6 +562,7 @@ class Loadable(): # called Loadable because Object is a terrible name
         self.roof = False
         self.name = "BrokenFile"    # TODO error cases over here, certain fields MUST be present, name being most important
         self.alpha = False
+        self.shape = "rect"
         infile = open(filename, "r")
         for line in infile:
             mySplit = line.split("=")
@@ -586,6 +606,8 @@ class Loadable(): # called Loadable because Object is a terrible name
                 # alpha = image has some transparency and should use convert_alpha (costs more than convert but preserves alpha channels)
                 if var == "alpha":
                     self.alpha = bool(val)
+                if var == "shape":
+                    self.shape = val
 
 
         infile.close()
@@ -598,6 +620,8 @@ class Map():
 
         # drawable object list
         self.draws = []
+        # current frame collisions dict (key:value is index:list where index is a draw's index in list, and list contains indices of draws the first index potentially collides with this frame)
+        self.collisions = {}
 
         # defaults in case of badly written level file
         self.background = "Missing"
@@ -678,7 +702,7 @@ class Map():
                     if teamType == "all":
                         validTarget = True
                     elif teamType == "enemy":
-                        if draw.team != teamMatch:
+                        if draw.team != teamMatch and draw.team != "map":
                             validTarget = True
                     elif teamType == "friendly":
                         if draw.team == teamMatch:
@@ -686,3 +710,153 @@ class Map():
                 if validTarget:
                     validTargets.append(draw)
         return validTargets
+
+    def screenCollisions(self, frameTime):
+        # this function should be called once per frame on an active map
+        # should populate a list of tuples which are the indices of draws which collide in an axis-bound rectangle check
+        # consult the list from this function whenever doing further collision checks, which must take place after this is called in the frame
+        # in theory this costs a little performance per frame when nothing is going on, but can save a lot when multiple collisions occur at once
+        # could make list a dictionary instead, group the tuples in advance (since we'll want them based on specific draws later anyways)
+        # empty old collisions dict
+        self.collisions = {}
+        iterA = 0
+        while iterA < len(self.draws):
+            colDrawA = self.draws[iterA]
+            # double check this is a purposeful loop
+            if colDrawA.collidable:
+                # iterB = iterA + 1  # iterB starting one later than iterA is faster for catching every collision, but we don't know in advance which ones we want the keys for, so the slower loop must be used
+                iterB = 0
+                # regardless of actual shape, make an axis-bound rectangle which can entirely enclose colDraw
+                # valid shapes atm: circle, rect
+                centerXA, centerYA = colDrawA.locX, colDrawA.locY
+                offsetXA, offsetYA = colDrawA.boundX/2, colDrawA.boundY/2
+                velXA, velYA = colDrawA.velX, colDrawA.velY
+                # with just circle and rectangle, can just use image boundaries to form rectangle TODO revisit when adding additional shapes
+                while iterB < len(self.draws):
+                    # get data for colDrawB
+                    colDrawB = self.draws[iterB]
+                    # verify this draw even concerns this loop
+                    if colDrawB.collidable and iterA != iterB:
+                        centerXB, centerYB = colDrawB.locX, colDrawB.locY
+                        offsetXB, offsetYB = colDrawB.boundX/2, colDrawB.boundY/2
+                        velXB, velYB = colDrawB.velX, colDrawB.velY
+
+                        # actual calculation time. Goal is to find a time range for X and Y axes, then save the shared time window for later use
+                        netLocX = centerXA - centerXB
+                        netLocY = centerYA - centerYB
+                        netVelX = velXA - velXB
+                        netVelY = velYA - velYB
+                        combWidth = offsetXA + offsetXB
+                        combHeight = offsetYA + offsetYB
+
+                        # calculate exact crossover time, leave at None if its not occuring in a positive time
+                        # account for 0 net velocity
+                        if netVelX == 0.0:
+                            # relative motion on X axis is 0, are they presently overlapping?
+                            if abs(netLocX) <= combWidth:
+                                startTimeX = 0.0
+                                endTimeX = frameTime
+                            else:
+                                # not moving relative to each other and not presently overlapping, therefore impossible to collide this frame
+                                startTimeX = None
+                                endTimeX = None
+                        else:
+                            colTimeX1 = (combWidth - netLocX) / netVelX
+                            colTimeX2 = -(combWidth + netLocX) / netVelX
+                            startTimeX = max(min(colTimeX1, colTimeX2), 0.0)
+                            endTimeX = min(max(colTimeX1, colTimeX2), frameTime)
+
+                        if netVelY == 0.0:
+                            # neither is moving, are they presently overlapping?
+                            if abs(netLocY) <= combHeight:
+                                startTimeY = 0.0
+                                endTimeY = frameTime
+                            else:
+                                startTimeY = None
+                                endTimeY = None
+                        else:
+                            colTimeY1 = (combHeight - netLocY) / netVelY
+                            colTimeY2 = -(combHeight + netLocY) / netVelY
+                            startTimeY = max(min(colTimeY1, colTimeY2), 0.0)
+                            endTimeY = min(max(colTimeY1, colTimeY2), frameTime)
+
+                        # with start and end times found, look for overlap
+                        # skip this if either range returned None
+                        if startTimeX is not None and startTimeY is not None:
+                            startColTime = max(startTimeX, startTimeY)
+                            endColTime = min(endTimeX, endTimeY)
+                            # now check frameTime constraints. We know start is less than end, but end must occur this frame or later, and start must be this frame or sooner
+                            if startColTime <= endColTime and endColTime >= 0.0 and startColTime <= frameTime:
+                                # collision window is valid goes from startColTime to endColTime
+                                colEntryTuple = (iterB, startColTime, endColTime)#, False)    # index of object, colStart, colEnd, boolean for resolved
+                                #print("Screened", iterA, "against", iterB, "and got", colEntryTuple)
+                                #print("More details:\n\tPosX", centerXA, "-", centerXB, "; PosY", centerYA, "-", centerYB, ";\n\tVelX", velXA, "-", velXB, "; VelY", velYA, "-", velYB, ";\n\tWidth", offsetXA, "+", offsetXB, "; Height", offsetYA, "+", offsetYB, ";")
+                                #print("\tTimeX", startTimeX, "->", endTimeX, "; TimeY", startTimeY, "->", endTimeY, "; ColTime", startColTime, "->", endColTime, ";")
+                                # add entry to dictionary
+                                if iterA not in self.collisions.keys():
+                                    self.collisions[iterA] = []
+                                self.collisions[iterA].append(colEntryTuple)
+                    iterB += 1
+            iterA += 1
+
+# collision calculator for axis-bound rectangles. This asserts colDrawA != colDrawB and both are collidable
+def checkTwoCollidableRectangles(colDrawA, colDrawB, frameTime):
+    centerXA, centerYA = colDrawA.locX, colDrawA.locY
+    offsetXA, offsetYA = colDrawA.boundX / 2, colDrawA.boundY / 2
+    velXA, velYA = colDrawA.velX, colDrawA.velY
+
+    centerXB, centerYB = colDrawB.locX, colDrawB.locY
+    offsetXB, offsetYB = colDrawB.boundX / 2, colDrawB.boundY / 2
+    velXB, velYB = colDrawB.velX, colDrawB.velY
+
+    # actual calculation time. Goal is to find a time range for X and Y axes, then save the shared time window for later use
+    netLocX = centerXA - centerXB
+    netLocY = centerYA - centerYB
+    netVelX = velXA - velXB
+    netVelY = velYA - velYB
+    combWidth = offsetXA + offsetXB
+    combHeight = offsetYA + offsetYB
+
+    # calculate exact crossover time, leave at None if its not occuring in a positive time
+    # account for 0 net velocity
+    if netVelX == 0.0:
+        # relative motion on X axis is 0, are they presently overlapping?
+        if abs(netLocX) <= combWidth:
+            startTimeX = 0.0
+            endTimeX = frameTime
+        else:
+            # not moving relative to each other and not presently overlapping, therefore impossible to collide this frame
+            startTimeX = None
+            endTimeX = None
+    else:
+        colTimeX1 = (combWidth - netLocX) / netVelX
+        colTimeX2 = -(combWidth + netLocX) / netVelX
+        startTimeX = max(min(colTimeX1, colTimeX2), 0.0)
+        endTimeX = min(max(colTimeX1, colTimeX2), frameTime)
+
+    if netVelY == 0.0:
+        # neither is moving, are they presently overlapping?
+        if abs(netLocY) <= combHeight:
+            startTimeY = 0.0
+            endTimeY = frameTime
+        else:
+            startTimeY = None
+            endTimeY = None
+    else:
+        colTimeY1 = (combHeight - netLocY) / netVelY
+        colTimeY2 = -(combHeight + netLocY) / netVelY
+        startTimeY = max(min(colTimeY1, colTimeY2), 0.0)
+        endTimeY = min(max(colTimeY1, colTimeY2), frameTime)
+
+    # with start and end times found, look for overlap
+    # skip this if either range returned None
+    if startTimeX is not None and startTimeY is not None:
+        startColTime = max(startTimeX, startTimeY)
+        endColTime = min(endTimeX, endTimeY)
+        # now check frameTime constraints. We know start is less than end, but end must occur this frame or later, and start must be this frame or sooner
+        if startColTime <= endColTime and endColTime >= 0.0 and startColTime <= frameTime:
+            # collision window is valid goes from startColTime to endColTime
+            colEntryTuple = (startColTime, endColTime)
+            return colEntryTuple
+    noneTuple = (None, None)
+    return noneTuple

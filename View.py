@@ -3,7 +3,7 @@ import pygame.freetype
 import math
 import random
 import time
-from Model import Ability, Character, Player, Item, Map, Drawable, Projectile, Effect, Loadable
+from Model import Ability, Character, Player, Item, Map, Drawable, Projectile, Effect, Loadable, checkTwoCollidableRectangles
 import os
 
 pygame.init()
@@ -69,7 +69,7 @@ currentMap = level1
 #playerCharacter = Loadable("Assets/Characters/TestChar.txt")
 #evilGrunt = Loadable("Assets/Characters/EnemyGrunt.txt")    # TODO replace hard-coded loadables with dynamic dictionary entries
 #print("Loaded characters:", loadedCharacters)
-testChar = Character(loadedCharacters["Jeff"], 80, 160) # TODO player control should be established via team or name matching player current character field TBD
+testChar = Character(loadedCharacters["Jeff"], currentMap.loadX, currentMap.loadY) # TODO player control should be established via team or name matching player current character field TBD
 #testChar.move(80, 160)
 currentMap.addDraw(testChar)
 manaBarBase = Drawable("Assets/ManaBarBase.png", 0, 40)
@@ -81,8 +81,8 @@ lifeBarFill = Drawable("Assets/LifeBarFull.png", 0, 0)
 #testChar.toughness += 5
 #testChar.evasion += 5
 #testChar.efficiency += 5
-testChar.life += 20
-testChar.mana += 20 # 20 seems like a pretty good cap for defensive stat totals, good to test extreme specialization vs distributed builds
+#testChar.life += 20
+#testChar.mana += 20 # 20 seems like a pretty good cap for defensive stat totals, good to test extreme specialization vs distributed builds
 
 menu=True
 menuBackground = pygame.image.load("Assets/MenuBackground.png").convert_alpha()
@@ -179,43 +179,46 @@ while running:
 
     # if map is loaded, go into map code
         # can do game logic here
-        frameTime = clock.tick(60)/1000.0  # get time since last frame, ALSO tell pygame to limit FPS at 60 TODO make configurable
+        frameTime = clock.tick()/1000.0  # get time since last frame, ALSO tell pygame to limit FPS at 60 TODO make configurable
         #print(frameTime)
 
+        # PLAYER MOVEMENT STAGE
+        moveX = False
+        moveY = False
         playerSpeed = testChar.getMoveSpeed()  #testChar.baseMove * (1.1 ** testChar.movement)
         boost = math.sqrt(playerSpeed*playerSpeed*2)-playerSpeed
-        if keyW:
-            testChar.locY -= playerSpeed * frameTime
+        if keyW:    # TODO reconfigure player movement math (direction via angles instead of 8 direction setup)
+            moveY = True
+            testChar.velY = 0 - playerSpeed
             # bonus speed if only moving on a cardinal axis
             if not keyA and not keyD:
-                testChar.locY -= boost * frameTime
+                testChar.velY -= boost
         if keyA:
-            testChar.locX -= playerSpeed * frameTime
+            moveX = True
+            testChar.velX = 0 - playerSpeed
             if not keyW and not keyS:
-                testChar.locX -= boost * frameTime
+                testChar.velX -= boost
         if keyS:
-            testChar.locY += playerSpeed * frameTime
+            moveY = True
+            testChar.velY = playerSpeed
             if not keyA and not keyD:
-                testChar.locY += boost * frameTime
+                testChar.velY += boost
         if keyD:
-            testChar.locX += playerSpeed * frameTime
+            moveX = True
+            testChar.velX = playerSpeed
             if not keyW and not keyS:
-                testChar.locX += boost * frameTime
+                testChar.velX += boost
 
-        # test movement changes, Q slows, R speeds
-        #if keyQ:
-        #    testChar.application -= 1
-        #if keyR:
-        #    testChar.application += 1
-
-        # MOVEMENT STAGE
+        if not moveX:
+            testChar.velX = 0.0
+        if not moveY:
+            testChar.velY = 0.0
 
         # boundary enforcement
-        # for now just keep within the 800x600
-        # trigger all projectiles on reaching a border
+        # trigger all projectiles on reaching a map border
         for draw in currentMap.draws:
             border = False
-            colRadius = 10
+            colRadius = 10  # TODO redo with physics engine plugin
             newX = draw.locX
             newY = draw.locY
             if isinstance(draw, Character):
@@ -233,7 +236,7 @@ while running:
                 newY = currentMap.height - colRadius
                 border = True
             if border:
-                draw.move(newX, newY)
+                draw.forceMove(newX, newY)
                 if isinstance(draw, Projectile):
                     # rather than copy the trigger code, just change the target to the new location
                     draw.targetX = draw.locX
@@ -253,18 +256,14 @@ while running:
                     if dist <= 80:
                         tooClose = True
             if not tooClose:
-                badGuyChar.baseHP = 150
-                badGuyChar.currentHP = badGuyChar.getMaxLife()
                 currentMap.addDraw(badGuyChar)
                 badGuyTimer = random.uniform(2,8)
 
 
 
-        # display all objects here
-        # draw map objects
+        # need offset data from last frame for mouse targeting, will need to be updated after movement later for display phase
         offX = display_width/2 - testChar.locX
         offY = display_height/2 - testChar.locY
-        gameDisplay.blit(currentMap.image, (offX, offY))  # draw map background
 
         # click based actions
         if click:
@@ -296,35 +295,109 @@ while running:
         if playerSwordTime > 0.0:
             playerSwordTime -= frameTime
 
-        characterDraws = []    # postpone drawing characters of team "player" until the end of the draw loop
+        # need to sort the draws out for figuring out draw order later. Each list should be a list of indices from currentMap.draws
+        effectDraws = []
+        genericDraws = []
+        projectileDraws = []
+        characterDraws = []    # postpone drawing characters until the very last
+        iter = 0
+        #print("\nNEW FRAME\n")
+        # handle collisions here
+        # pre-check for all easy collisions to save time if things get messy later
+        currentMap.screenCollisions(frameTime)
         for draw in currentMap.draws:
-            if isinstance(draw, Projectile):
-                if draw.moveProj(frameTime):
-                    # trigger ability, get ability by name from payload, then call trigger at projectile location
-                    abilityName = draw.payload
-                    targetX = draw.locX
-                    targetY = draw.locY
-                    newTrigger = None
-                    # if ability is valid (atm just in the dictionary) trigger effects
-                    if abilityName in abilityDictionary.keys():
-                        newTrigger = abilityDictionary[abilityName].trigger(draw.caster, targetX, targetY, currentMap)
-                    else:
-                        raise Exception("Unknown ability triggered:"+abilityName)
-                    # remove projectile, might not be safe to do mid-loop TODO investigate
-                    if newTrigger is not None:
-                        currentMap.addDraw(newTrigger)
-                    currentMap.draws.remove(draw)
-            if isinstance(draw, Effect):
-                draw.tick(frameTime)
+            # collidable object check (stop draws from passing through each other)
+            # get list of prechecked collisions for given draw, verify actions to be taken
+            # if the interaction only needs one response action (ie collision resolution), remove this draw from collider's prechecked list
+            manuallyMoved = 0.0
+            colX = False
+            colY = False
+            if iter in currentMap.collisions.keys():
+                myChecks = currentMap.collisions[iter]
+                # sort myChecks by check[1] (collision start time), ascending order
+                for check in sorted(myChecks, key=lambda x: x[1]):
+                    # TODO fix corner case AKA multiple collisions at once. Inelastic only atm so this should be easy, will get more complicated later
+                    #if not check[3]:    # if collision not physically resolved already
+                    #print("Checking", iter, "versus", check)
+                    checkDraw = currentMap.draws[check[0]]
+                    colStart = check[1]
+                    colEnd = check[2]
+                    if draw.shape == "rect" and checkDraw.shape == "rect":
+                        # double rectangle, so we already have all the info needed
+                        #print(iter, "and", check[0], "are both rectangles, colliding from", colStart, "to", colEnd)
+                        # as this is not a physics-focused game, going to ignore secondary collisions (collisions only visible after resolving one earlier in the frame)
+                        # unless some sort of "bouncy" flag is set, use inelastic collision model
+                        # TODO implement bouncy flag for elastic collisions mode
+                        # for inelastic, move objects to their positions at colStart, then set velocities such that only the component running perpendicular to the collision axis is left
+                        # since these are axis-bound rectangles, we can just set X or Y velocities to 0 at that position, based on which side collides (potentially both for rare corner-to-corner collision)
+                        secondary = False
+                        if manuallyMoved > 0.0:
+                            #continue # just skip for now
+                            # some other collision has moved this, see if this collision is still valid before proceeding (at the very least can update values)
+                            # need to hand valid position data to double checker, so temporarily move draw by manuallyMoved, then put it back
+                            checkDraw.move(manuallyMoved)
+                            newColTuple = checkTwoCollidableRectangles(draw, checkDraw, frameTime-manuallyMoved)
+                            checkDraw.move(-manuallyMoved)
+                            colStart = newColTuple[0]
+                            colEnd = newColTuple[1]
+                            if colStart is None or colEnd is None:
+                                print("Secondary collision cancelled")
+                                continue    # skip this collision since it no longer occurs
+                            else:
+                                print("Secondary collision still going")
+                                secondary = True
+
+                        draw.move(colStart)
+                        manuallyMoved += colStart
+                        #checkDraw.move(colStart)
+                        # now check collision axis
+                        diffX = abs(draw.locX - (checkDraw.locX+colStart*checkDraw.velX))
+                        diffY = abs(draw.locY - (checkDraw.locY+colStart*checkDraw.velY))
+                        if diffX == draw.boundX/2 + checkDraw.boundX/2 and not colX:
+                            # X axis collision
+                            if secondary:
+                                print("X Collision", draw.velX, "->", draw.velX*-0.01, ";", checkDraw.velX, "->", checkDraw.velX*-0.01)
+                            draw.velX *= -0.01
+                            colX = True
+                            #checkDraw.velX *= -0.001
+                        if diffY == draw.boundY/2 + checkDraw.boundY/2 and not colY:
+                            # Y axis collision
+                            if secondary:
+                                print("Y Collision", draw.velY, "->", draw.velY*-0.01, ";", checkDraw.velY, "->", checkDraw.velY*-0.01)
+                            draw.velY *= -0.01
+                            colY = True
+                            #checkDraw.velY *= -0.001
+                        # now move with new velocities for the rest of the frame
+                        #draw.move(frameTime-colStart)
+                        #checkDraw.move(frameTime-colStart)
+                        #print("Frametime:", frameTime, "-", colStart, "=", frameTime-colStart)
+                        #if isinstance(draw, Character):
+                        #    print(draw.name, "(", iter, ") collided with", check[0])
+                        #if isinstance(checkDraw, Character):
+                        #    print(checkDraw.name, "(", check[0], ") collided with", iter)
+                    if draw.shape == "circle" or checkDraw.shape == "circle":
+                        # if either is a circle, need to check again treating BOTH as circles (circle draws will be smaller, rect temp-circles will be larger)
+                        pass    # TODO implement
+                    # cleanup step, remove tuples which start with iter in list keyed by check[0]
+                    '''check = (check[0], check[1], check[2], True)
+                    tempChecks = currentMap.collisions[check[0]]
+                    tempIter = 0
+                    for delCheck in tempChecks:
+                        if delCheck[0] == iter:
+                            #print("Cleaning up", check[0], "hits", iter)
+                            # instead of deleting, just set resolved flag in case other rect vs rect checks are needed (resolved only referring to physical movement)
+                            tempChecks[tempIter] = (delCheck[0], delCheck[1], delCheck[2], True)
+                            #tempChecks.remove(delCheck)
+                        tempIter += 1'''
+            draw.move(frameTime-manuallyMoved)
             if isinstance(draw, Character):
-                characterDraws.append(draw)
+                characterDraws.append(iter)
                 #if draw.team == "Player":
-                #    continue   #TODO if reimplementing players drawn last, this needs uncommented
+                #    continue   #TODO if reimplementing players drawn last, this needs uncommented. Atm all characters are drawn last
                 #print("Character is not a player", draw.currentHP, "HP")
                 if draw.team != "Player" and draw.alive:
                 #elif draw.alive:
                     # npc behavior here
-                    # TODO abstract damage functions, auto including toughness, evasion, life, etc. IE Character.damage(amount)
                     # should be trying to do something
                     dist = math.sqrt((draw.locX - testChar.locX)**2+(draw.locY - testChar.locY)**2)
                     if dist <= 100:
@@ -352,40 +425,91 @@ while running:
                             dist = math.sqrt((diffX)**2+(diffY)**2)
                             ratX = diffX/dist
                             ratY = diffY/dist
-                            draw.locX += frameTime * speed * ratX
-                            draw.locY += frameTime * speed * ratY
+                            draw.velX = speed * ratX
+                            draw.velY = speed * ratY
 
                         else:
                             currentMap.addDraw(newFire)
                             draw.age -= random.uniform(1, 5)
                 #continue
+            elif isinstance(draw, Effect):
+                effectDraws.append(iter)
+                draw.tick(frameTime)
+            elif isinstance(draw, Projectile):
+                projectileDraws.append(iter)
+                if draw.targetProj(frameTime):
+                    # trigger ability, get ability by name from payload, then call trigger at projectile location
+                    abilityName = draw.payload
+                    targetX = draw.locX
+                    targetY = draw.locY
+                    newTrigger = None
+                    # if ability is valid (atm just in the dictionary) trigger effects
+                    if abilityName in abilityDictionary.keys():
+                        newTrigger = abilityDictionary[abilityName].trigger(draw.caster, targetX, targetY, currentMap)
+                    else:
+                        raise Exception("Unknown ability triggered:"+abilityName)
+                    # remove projectile, might not be safe to do mid-loop TODO investigate
+                    if newTrigger is not None:
+                        currentMap.addDraw(newTrigger)
+                    currentMap.draws.remove(draw)   # TODO current removal conditions are messy and can conflict (if projectile age limit is reached in the same frame as target)
+                    projectileDraws.pop()
             else:
-                gameDisplay.blit(draw.image, (offX+int(draw.locX-draw.boundX/2), offY+int(draw.locY-draw.boundY/2)))
+                genericDraws.append(iter)
+                #gameDisplay.blit(draw.image, (offX+int(draw.locX-draw.boundX/2), offY+int(draw.locY-draw.boundY/2)))
             #print("Draw age", draw.age)
             draw.age += frameTime
             #print("Frametime", frameTime, "total", draw.age)
             if draw.limit is not None:
                 #print("Draw limit", draw.limit, "age", draw.age)
                 if draw.age >= draw.limit:
+                    # which list to remove from...
+                    # got to be a cleaner way to do this than checking type again
+                    if isinstance(draw, Effect):
+                        effectDraws.pop()
+                    elif isinstance(draw, Projectile):
+                        projectileDraws.pop()
+                    elif isinstance(draw, Character):
+                        characterDraws.pop()
+                    else:
+                        genericDraws.pop()
                     currentMap.draws.remove(draw)
-        for draw in characterDraws:
+            iter += 1
+
+
+        # draw section
+        offX = display_width/2 - testChar.locX
+        offY = display_height/2 - testChar.locY
+        gameDisplay.blit(currentMap.image, (offX, offY))  # draw map background
+
+        for index in effectDraws:
+            curDraw = currentMap.draws[index]
+            gameDisplay.blit(curDraw.image, (offX+int(curDraw.locX - curDraw.boundX / 2), offY+int(curDraw.locY - curDraw.boundY / 2)))
+        for index in genericDraws:
+            curDraw = currentMap.draws[index]
+            gameDisplay.blit(curDraw.image, (offX+int(curDraw.locX - curDraw.boundX / 2), offY+int(curDraw.locY - curDraw.boundY / 2)))
+        for index in projectileDraws:
+            curDraw = currentMap.draws[index]
+            gameDisplay.blit(curDraw.image, (offX+int(curDraw.locX - curDraw.boundX / 2), offY+int(curDraw.locY - curDraw.boundY / 2)))
+        for index in characterDraws:
             #this forces characters to be drawn last, as well as calls their animate functions in a timely manner
-            draw.animate(frameTime)
-            gameDisplay.blit(draw.image, (offX+int(draw.locX - draw.boundX / 2), offY+int(draw.locY - draw.boundY / 2)))
+            curDraw = currentMap.draws[index]
+            curDraw.animate(frameTime)
+            gameDisplay.blit(curDraw.image, (offX+int(curDraw.locX - curDraw.boundX / 2), offY+int(curDraw.locY - curDraw.boundY / 2)))
 
 
-        # life and mana regen, continous effects calculations
-        if testChar.currentMana < testChar.getMaxMana():
-            # regen 0.1% of missing mana per second per point in mana
-            testChar.currentMana += frameTime * (testChar.getMaxMana()-testChar.currentMana) * 0.001 * testChar.mana #max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
-        if testChar.currentMana > testChar.getMaxMana():
-            testChar.currentMana = testChar.getMaxMana()
-        # life
-        if testChar.currentLife < testChar.getMaxLife():
-            testChar.currentLife += frameTime * (testChar.getMaxLife() - testChar.currentLife) * 0.001 * testChar.life #max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
-        if testChar.currentLife > testChar.getMaxLife():
-            testChar.currentLife = testChar.getMaxLife()
-        if not testChar.alive:
+        if testChar.alive:
+            # life and mana regen, continous effects calculations
+            if testChar.currentMana < testChar.getMaxMana():
+                # regen 0.1% of missing mana per second per point in mana
+                testChar.currentMana += frameTime * (testChar.getMaxMana()-testChar.currentMana) * 0.001 * testChar.mana #max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
+            if testChar.currentMana > testChar.getMaxMana():
+                testChar.currentMana = testChar.getMaxMana()
+            # life
+            if testChar.currentLife < testChar.getMaxLife():
+                testChar.currentLife += frameTime * (testChar.getMaxLife() - testChar.currentLife) * 0.001 * testChar.life #max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
+            if testChar.currentLife > testChar.getMaxLife():
+                testChar.currentLife = testChar.getMaxLife()
+        else:
             # you are dead, dead, dead
             deadSurface, deadBox = font.render(str("YOU ARE DEAD"), (200, 50, 50))
             gameDisplay.blit(deadSurface, (display_width/2-50, display_height/2-25))
