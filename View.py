@@ -41,6 +41,18 @@ keyA = False
 keyS = False
 keyD = False
 
+# num keys for ability selection, 1-0?
+key1 = False
+key2 = False
+key3 = False
+key4 = False
+key5 = False
+key6 = False
+key7 = False
+key8 = False
+key9 = False
+key0 = False
+
 # test key for speed change
 keyQ = False
 keyR = False
@@ -72,10 +84,16 @@ currentMap = level1
 testChar = Character(loadedCharacters["Jeff"], currentMap.loadX, currentMap.loadY) # TODO player control should be established via team or name matching player current character field TBD
 #testChar.move(80, 160)
 currentMap.addDraw(testChar)
-manaBarBase = Drawable("Assets/ManaBarBase.png", 0, 40)
-lifeBarBase = Drawable("Assets/LifeBarBase.png", 0, 0)
-manaBarFill = Drawable("Assets/ManaBarFull.png", 0, 40)
-lifeBarFill = Drawable("Assets/LifeBarFull.png", 0, 0)
+
+# load UI elements
+manaBarBase = Drawable("Assets/UI/ManaBarBase.png", 0, 40)
+lifeBarBase = Drawable("Assets/UI/LifeBarBase.png", 0, 0)
+manaBarFill = Drawable("Assets/UI/ManaBarFull.png", 0, 40)
+lifeBarFill = Drawable("Assets/UI/LifeBarFull.png", 0, 0)
+
+abilityBox = pygame.image.load("Assets/UI/BaseAbilitySlot.png").convert_alpha()
+highlightBox = pygame.image.load("Assets/UI/HighlightedAbilitySlot.png").convert_alpha()
+highlightedAbility = 0
 
 # science values
 #testChar.toughness += 5
@@ -85,11 +103,12 @@ lifeBarFill = Drawable("Assets/LifeBarFull.png", 0, 0)
 #testChar.mana += 20 # 20 seems like a pretty good cap for defensive stat totals, good to test extreme specialization vs distributed builds
 
 menu=True
-menuBackground = pygame.image.load("Assets/MenuBackground.png").convert_alpha()
-continueButton = pygame.image.load("Assets/Continue.png").convert_alpha()
-optionsButton = pygame.image.load("Assets/Options.png").convert_alpha()
-exitButton = pygame.image.load("Assets/Exit.png").convert_alpha()
-gameTitle = pygame.image.load("Assets/GameTitle.png").convert_alpha()
+menuBackground = pygame.image.load("Assets/UI/MenuBackground.png").convert_alpha()
+continueButton = pygame.image.load("Assets/UI/Continue.png").convert_alpha()
+optionsButton = pygame.image.load("Assets/UI/Options.png").convert_alpha()
+exitButton = pygame.image.load("Assets/UI/Exit.png").convert_alpha()
+gameTitle = pygame.image.load("Assets/UI/GameTitle.png").convert_alpha()
+
 
 badGuyTimer = 5.0
 
@@ -114,6 +133,27 @@ while running:
                 keyQ = True
             if event.key == pygame.K_r:
                 keyR = True
+            # numKeys
+            if event.key == pygame.K_1:
+                key1 = True
+            if event.key == pygame.K_2:
+                key2 = True
+            if event.key == pygame.K_3:
+                key3 = True
+            if event.key == pygame.K_4:
+                key4 = True
+            if event.key == pygame.K_5:
+                key5 = True
+            if event.key == pygame.K_6:
+                key6 = True
+            if event.key == pygame.K_7:
+                key7 = True
+            if event.key == pygame.K_8:
+                key8 = True
+            if event.key == pygame.K_9:
+                key9 = True
+            if event.key == pygame.K_0:
+                key0 = True
         # key is released
         if event.type == pygame.KEYUP:
             if event.key == pygame.K_w:
@@ -130,6 +170,30 @@ while running:
             if event.key == pygame.K_r:
                 keyR = False
                 #testChar.application += 1
+
+
+            # numKeys
+            if event.key == pygame.K_1:
+                key1 = False
+            if event.key == pygame.K_2:
+                key2 = False
+            if event.key == pygame.K_3:
+                key3 = False
+            if event.key == pygame.K_4:
+                key4 = False
+            if event.key == pygame.K_5:
+                key5 = False
+            if event.key == pygame.K_6:
+                key6 = False
+            if event.key == pygame.K_7:
+                key7 = False
+            if event.key == pygame.K_8:
+                key8 = False
+            if event.key == pygame.K_9:
+                key9 = False
+            if event.key == pygame.K_0:
+                key0 = False
+
             if event.key == pygame.K_ESCAPE:
                 if menu:
                     running = False
@@ -214,6 +278,30 @@ while running:
         if not moveY:
             testChar.velY = 0.0
 
+        # ability selection, just set to last one in list if available, multiple keys can be pressed but only one ability can be selected
+        # so long as behavior is consistent here, shouldn't be an issue to allow multiple presses
+        goodKeys = testChar.abilities.keys()
+        if key1 and 0 in goodKeys:  # off by one I know, first ability loaded will be at index 0 despite being activated by key 1. I blame keyboard designers
+            highlightedAbility = 0
+        if key2 and 1 in goodKeys:
+            highlightedAbility = 1
+        if key3 and 2 in goodKeys:
+            highlightedAbility = 2
+        if key4 and 3 in goodKeys:
+            highlightedAbility = 3
+        if key5 and 4 in goodKeys:
+            highlightedAbility = 4
+        if key6 and 5 in goodKeys:
+            highlightedAbility = 5
+        if key7 and 6 in goodKeys:
+            highlightedAbility = 6
+        if key8 and 7 in goodKeys:
+            highlightedAbility = 7
+        if key9 and 8 in goodKeys:
+            highlightedAbility = 8
+        if key0 and 9 in goodKeys:
+            highlightedAbility = 9
+
         # boundary enforcement
         # trigger all projectiles on reaching a map border
         for draw in currentMap.draws:
@@ -274,7 +362,8 @@ while running:
             left, middle, right = pygame.mouse.get_pressed()
             if left:
                 #newProjectile = acidPit.cast(testChar, targetX, targetY)
-                newProjectile = testFireBall.cast(testChar, targetX, targetY)
+                #newProjectile = testFireBall.cast(testChar, targetX, targetY)
+                newProjectile = abilityDictionary[testChar.abilities[highlightedAbility]].cast(testChar, targetX, targetY)
                 if not newProjectile:
                     print("Not enough mana", testChar.currentMana)
                 else:
@@ -330,7 +419,7 @@ while running:
                         # TODO implement bouncy flag for elastic collisions mode
                         # for inelastic, move objects to their positions at colStart, then set velocities such that only the component running perpendicular to the collision axis is left
                         # since these are axis-bound rectangles, we can just set X or Y velocities to 0 at that position, based on which side collides (potentially both for rare corner-to-corner collision)
-                        secondary = False
+                        #secondary = False
                         if manuallyMoved > 0.0:
                             #continue # just skip for now
                             # some other collision has moved this, see if this collision is still valid before proceeding (at the very least can update values)
@@ -341,13 +430,21 @@ while running:
                             colStart = newColTuple[0]
                             colEnd = newColTuple[1]
                             if colStart is None or colEnd is None:
-                                print("Secondary collision cancelled")
+                                #print("Secondary collision cancelled")
                                 continue    # skip this collision since it no longer occurs
-                            else:
-                                print("Secondary collision still going")
-                                secondary = True
+                            #else:
+                                #print("Secondary collision still going")
+                                #secondary = True
 
                         draw.move(colStart)
+                        if isinstance(draw, Projectile):
+                            # potentially special case where volatile projectile needs triggered
+                            if draw.volatile and checkDraw is not draw.caster:
+                                # need to ignore in case of colliding with caster
+                                draw.targetX = draw.locX
+                                draw.targetY = draw.locY
+                                draw.velX = 0.0
+                                draw.velY = 0.0
                         manuallyMoved += colStart
                         #checkDraw.move(colStart)
                         # now check collision axis
@@ -355,15 +452,15 @@ while running:
                         diffY = abs(draw.locY - (checkDraw.locY+colStart*checkDraw.velY))
                         if diffX == draw.boundX/2 + checkDraw.boundX/2 and not colX:
                             # X axis collision
-                            if secondary:
-                                print("X Collision", draw.velX, "->", draw.velX*-0.01, ";", checkDraw.velX, "->", checkDraw.velX*-0.01)
+                            #if secondary:
+                            #    print("X Collision", draw.velX, "->", draw.velX*-0.01, ";", checkDraw.velX, "->", checkDraw.velX*-0.01)
                             draw.velX *= -0.01
                             colX = True
                             #checkDraw.velX *= -0.001
                         if diffY == draw.boundY/2 + checkDraw.boundY/2 and not colY:
                             # Y axis collision
-                            if secondary:
-                                print("Y Collision", draw.velY, "->", draw.velY*-0.01, ";", checkDraw.velY, "->", checkDraw.velY*-0.01)
+                            #if secondary:
+                            #    print("Y Collision", draw.velY, "->", draw.velY*-0.01, ";", checkDraw.velY, "->", checkDraw.velY*-0.01)
                             draw.velY *= -0.01
                             colY = True
                             #checkDraw.velY *= -0.001
@@ -445,13 +542,14 @@ while running:
                     newTrigger = None
                     # if ability is valid (atm just in the dictionary) trigger effects
                     if abilityName in abilityDictionary.keys():
-                        newTrigger = abilityDictionary[abilityName].trigger(draw.caster, targetX, targetY, currentMap)
+                        newTrigger = abilityDictionary[abilityName].trigger(draw.caster, targetX, targetY, currentMap, frameTime)
                     else:
                         raise Exception("Unknown ability triggered:"+abilityName)
                     # remove projectile, might not be safe to do mid-loop TODO investigate
                     if newTrigger is not None:
                         currentMap.addDraw(newTrigger)
-                    currentMap.draws.remove(draw)   # TODO current removal conditions are messy and can conflict (if projectile age limit is reached in the same frame as target)
+                    #currentMap.draws.remove(draw)   # TODO current removal conditions are messy and can conflict (if projectile age limit is reached in the same frame as target)
+                    draw.setLimit(-1)   # set limit to queue for removal later in frame
                     projectileDraws.pop()
             else:
                 genericDraws.append(iter)
@@ -459,20 +557,6 @@ while running:
             #print("Draw age", draw.age)
             draw.age += frameTime
             #print("Frametime", frameTime, "total", draw.age)
-            if draw.limit is not None:
-                #print("Draw limit", draw.limit, "age", draw.age)
-                if draw.age >= draw.limit:
-                    # which list to remove from...
-                    # got to be a cleaner way to do this than checking type again
-                    if isinstance(draw, Effect):
-                        effectDraws.pop()
-                    elif isinstance(draw, Projectile):
-                        projectileDraws.pop()
-                    elif isinstance(draw, Character):
-                        characterDraws.pop()
-                    else:
-                        genericDraws.pop()
-                    currentMap.draws.remove(draw)
             iter += 1
 
 
@@ -496,17 +580,20 @@ while running:
             curDraw.animate(frameTime)
             gameDisplay.blit(curDraw.image, (offX+int(curDraw.locX - curDraw.boundX / 2), offY+int(curDraw.locY - curDraw.boundY / 2)))
 
+        # TODO draw ability UI here
+        # for starters, just have first ability from testChar file selected, maybe use number keys to change which one is highlighted later
+        # display icon should use animation specified by config (new line, can share with skill, does not need to)
 
         if testChar.alive:
             # life and mana regen, continous effects calculations
             if testChar.currentMana < testChar.getMaxMana():
                 # regen 0.1% of missing mana per second per point in mana
-                testChar.currentMana += frameTime * (testChar.getMaxMana()-testChar.currentMana) * 0.001 * testChar.mana #max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
+                testChar.currentMana += frameTime * (testChar.getMaxMana()-testChar.currentMana) * 0.001 * (0+testChar.mana) #max(1, 0.01 * (testChar.getMaxMana()-testChar.currentMana) )
             if testChar.currentMana > testChar.getMaxMana():
                 testChar.currentMana = testChar.getMaxMana()
             # life
             if testChar.currentLife < testChar.getMaxLife():
-                testChar.currentLife += frameTime * (testChar.getMaxLife() - testChar.currentLife) * 0.001 * testChar.life #max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
+                testChar.currentLife += frameTime * (testChar.getMaxLife() - testChar.currentLife) * 0.001 * (0+testChar.life) #max(1, 0.01 * (testChar.getMaxLife() - testChar.currentLife))
             if testChar.currentLife > testChar.getMaxLife():
                 testChar.currentLife = testChar.getMaxLife()
         else:
@@ -517,7 +604,7 @@ while running:
             #time.sleep(2)
             #menu = True
 
-        # draw HUD
+        # draw HUD  # TODO get HUD to scale with screen resolution (atm its all hard coded to fit 1920x1080)
         if testChar.getMaxMana() > 0.0:
             gameDisplay.blit(manaBarBase.image, (manaBarBase.locX, manaBarBase.locY))
             manaFillImage = pygame.transform.scale(manaBarFill.image, (int(160.0*max(0,testChar.currentMana)/(testChar.getMaxMana())), 40))  # TODO update for dynamic asset scaling
@@ -539,11 +626,34 @@ while running:
         aliveTimeSurface, aliveTimeBox = font.render(str(int(frameRate)), (45, 255, 0))    # current/max str(int(testChar.currentHP)) + "/" + str(int(testChar.baseHP * 1.1 ** testChar.life)
         gameDisplay.blit(aliveTimeSurface, (0, 590))
 
+        # abilities list, use list of abilities found on testChar to populate, draw one box for each (try to evenly space, centered, 0-9 left-right)
+        # take note of "active" ability, this one will use the selected UI variant
+        # can change which one is highlighted via number keys (should display a number 1+ in box to suggest as much)
+        # left mouse click will fire selected ability
+        # somehow preview mana cost... draw in purple on mana bar based on amount, draw in orange if not enough
+        #print("TestChar knows", testChar.abilities)
+        boxWidth, boxHeight = abilityBox.get_size()
+        numAbilities = len(list(testChar.abilities.keys()))
+        curAbilityNum = 0
+        while curAbilityNum < numAbilities:
+            if curAbilityNum == highlightedAbility:
+                gameDisplay.blit(highlightBox, (display_width/2-(boxWidth*numAbilities)/2+boxWidth*curAbilityNum, display_height-2*boxHeight))
+            else:
+                gameDisplay.blit(abilityBox, (display_width/2-(boxWidth*numAbilities)/2+boxWidth*curAbilityNum, display_height-2*boxHeight))
+            curAbilityNum += 1
+
+
         # frame cleanup section
         # reset old movements (only need to remember what moved during this frame)
         for draw in currentMap.draws:
             draw.oldX = draw.locX
             draw.oldY = draw.locY
+            if draw.limit is not None:
+                #print("Draw limit", draw.limit, "age", draw.age)
+                if draw.age >= draw.limit:
+                    # which list to remove from...
+                    # got to be a cleaner way to do this than checking type again
+                    currentMap.draws.remove(draw)
 
     pygame.display.update()
 

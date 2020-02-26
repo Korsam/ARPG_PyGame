@@ -4,17 +4,18 @@ loadX=150
 loadY=500
 background=Level1.png
 
-BigWall=150,150
-BigWall=200,300
-BigWall=300,100
-BigWall=400,100
-BigWall=500,100
-BigWall=600,100
-BigWall=700,100
-BigWall=800,100
+BigWallY=800,100
+BigWallY=800,200
+BigWallY=800,300
+BigWallX=850,330
+
+BigWallY=800,600
+BigWallY=800,700
+BigWallY=800,800
+BigWallX=850,830
 
 Enemy AI should be configured with an 800 range visibility, plus a line of sight check with collidables (doesn't need to be instantaneous, or every frame)
-=Grunt=450,450
-=Grunt=450,550
+Grunt=950,450
+Grunt=450,550
 =Grunt=550,450
 =Grunt=550,550

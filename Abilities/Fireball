@@ -1,4 +1,4 @@
-name=Fireballl
+name=Fireball
 targetingMode=ground
 travelIcon=Assets/FireTrail.png
 baseDamage=100
@@ -10,3 +10,5 @@ baseSoundRadiusMultiplier=10
 shape=circle
 team=all
 animation=Fireball
+preview=Fireball
+volatile=True

@@ -59,6 +59,7 @@ class Ability():
         self.volatile = False
 
         self.animation = "none"
+        self.preview = "none"
         self.draws = []
         self.maxRange = 0.0
 
@@ -121,15 +122,19 @@ class Ability():
                 if var == "team":
                     self.team = val
                 if var == "animation":
+                    # which folder to use for triggered ability TODO make this work for non-dot skills
                     self.animation = val
                 if var == "volatile":
-                    self.animation = bool(val)
+                    self.volatile = bool(val)
                 if var == "maxRange":
                     self.maxRange = float(val)
                 if var == "evasionEffect":
                     self.evasionEffect = float(val)
                 if var == "armorEffect":
                     self.armorEffect = float(val)
+                if var == "preview":
+                    # which animation folder to use for ability preview
+                    self.preview = val
 
         infile.close()
         if self.animation != "none":
@@ -168,7 +173,7 @@ class Ability():
         payload = self.name
         return Projectile(self.travelIcon, caster.locX, caster.locY, caster, targetX, targetY, self.baseSpeed, self.scaleSpeed, self.volatile, payload)
 
-    def trigger(self, caster, targetX, targetY, map):
+    def trigger(self, caster, targetX, targetY, map, frameTime):
         # actually trigger the effects of the ability at target location
         # this part can vary wildly based on the flags in the ability settings
         #validTargets = []
@@ -183,7 +188,7 @@ class Ability():
             #scaledDraw = pygame.transform.scale(baseDraw, (actualSize, actualSize))
             #print("Draws", self.draws)
             searchRadius = self.baseRadius * BASE ** (caster.application * self.scaleApplication)
-            validTargets = map.findValidTargets(targetX, targetY, searchRadius, self.team, caster.team)
+            validTargets = map.findValidTargets(targetX, targetY, searchRadius, self.team, caster.team, frameTime)
             for target in validTargets:
                 target.damage(self.baseDamage * BASE ** (caster.potency * self.scalePotency), self.evasionEffect, self.armorEffect)
             # draw it!
@@ -206,7 +211,9 @@ class Drawable():
             #print("Loading image from", os.getcwd(), "its", img)
             self.alpha = False  # TODO store loaded images from animation folder as specific vars (no loading after initialization, could inherit loaded images from Loadable)
             # TODO reconfigure drawable use cases to always use a loadable which has preloaded and converted images
-            self.image = pygame.image.load(dat).convert()
+            self.imageDict = {}
+            self.imageDict['base'] = pygame.image.load(dat).convert()
+            self.image = self.imageDict['base']
             self.locX = float(x)
             self.locY = float(y)
             self.boundX, self.boundY = self.image.get_size()
@@ -247,17 +254,10 @@ class Drawable():
             self.collidable = dat.collidable
             self.roof = dat.roof
             self.alpha = dat.alpha
-            imgLocation = "None"
-            if self.animation != "None":
-                imgLocation = "Assets/Animations/"+self.animation+"/Base.png"
-            else:
-                imgLocation = dat.image
-            if self.alpha:
-                self.image = pygame.image.load(imgLocation).convert_alpha()
-            else:
-                self.image = pygame.image.load(imgLocation).convert()
+            self.imageDict = dat.imageDict
+            self.image = self.imageDict['base']
             self.boundX, self.boundY = self.image.get_size()
-
+            self.setBounds(dat.sizeX, dat.sizeY)
         # starting velocities should always be zero at this stage, projectile and character classes can change this after super is called
         self.velX = 0.0
         self.velY = 0.0
@@ -267,17 +267,21 @@ class Drawable():
         self.scale = scal
         self.image = pygame.transform.scale(self.image, (scal*2, scal*2))
         self.boundX, self.boundY = self.image.get_size()
+    def setBounds(self, newX, newY):
+        self.image = pygame.transform.scale(self.image, (int(newX), int(newY)))
+        self.boundX, self.boundY = self.image.get_size()
     def setLimit(self, limit):
         self.limit = limit
         self.age = 0.0
 
-    def setImage(self, filename):
+    def setImage(self, imageKey):
         # given filename, load image and set scale
-        if self.alpha:
-            self.image = pygame.image.load(filename).convert_alpha()
+        if imageKey in self.imageDict.keys():
+            self.image = self.imageDict[imageKey]
         else:
-            self.image = pygame.image.load(filename).convert()
-        self.setScale(self.scale)
+            print ("setImage failed: key not found.", imageKey, "not among", self.imageDict.keys())
+        #self.setScale(self.scale)
+        self.setBounds(self.boundX, self.boundY)    # set bounds to match previous image
 
     def move(self, frameTime):
         self.oldX = self.locX
@@ -302,7 +306,7 @@ class Effect(Drawable):
         self.time = 0.0
     def tick(self, frameTime):
         # given an amount of time, deal damage to relevant characters within ability radius accordingly
-        validTargets = self.map.findValidTargets(self.locX, self.locY, self.scale, self.ability.team, self.caster.team)
+        validTargets = self.map.findValidTargets(self.locX, self.locY, self.scale, self.ability.team, self.caster.team, frameTime)
         for target in validTargets:
             target.damage(frameTime*self.ability.baseDamage*BASE**(self.caster.potency*self.ability.scalePotency))
         # also apply slow, speed, whatever other continuous effects here    TODO
@@ -310,27 +314,22 @@ class Effect(Drawable):
         # also a good time to switch images
         self.time += frameTime  # TODO animation speed modifier, 2.0 means animation cycle will play two times per second
         # use time % len(draws) to determine which image to use
-        drawNum = int(self.time % len(self.ability.draws))
-        self.setImage(self.ability.draws[drawNum])
+        drawNum = int(self.time % len(self.imageDict.keys()))
+        self.setImage(list(self.imageDict.keys())[drawNum])
 
 
 class Projectile(Drawable):
     def __init__(self, img, x, y, caster, targetX, targetY, speed, scaleSpeed, volatile, payload):
-        self.targetX = -1
-        self.targetY = -1
-        self.speed = 0.1
-        self.scaleSpeed = 0.0
-        self.caster = "Jeff"
-        self.volatile = False
-        self.payload = "default"  # ability to be activated on landing
         super().__init__(img, x, y)
         self.targetX = targetX
         self.targetY = targetY
         self.speed = speed
         self.scaleSpeed = scaleSpeed
-        self.payload = payload
+        self.payload = payload # ability to be activated on landing
         self.caster = caster
         self.volatile = volatile
+        if self.volatile:
+            self.collidable = True
 
     def targetProj(self, time):
         # return false if proj keeps moving, true if detonating. Adjusts projectile velocity to match target
@@ -372,27 +371,12 @@ class Character(Drawable):
         # loaded is a Loadable, with all data needed to fill in a character's data minus specific position (hence x y args)
         assert isinstance(loaded, Loadable), "Character creation failed, loaded wrong type"
 
-        self.animation = loaded.animation
+        super().__init__(loaded, x, y, mode="load")
 
-        if self.animation == "None":
-            img = loaded.image
-            self.baseImage = img
-            self.evadeImage = img
-            self.leftImage = img
-            self.rightImage = img
-            self.deadImage = img
-        else:   # TODO cleanup hardcoded directories
-            self.baseImage = "Assets/Animations/"+self.animation+"/Base.png"
-            img = self.baseImage
-            self.evadeImage = "Assets/Animations/"+self.animation+"/Evaded.png"
-            self.leftImage = "Assets/Animations/"+self.animation+"/Left.png"
-            self.rightImage = "Assets/Animations/"+self.animation+"/Right.png"
-            self.deadImage = "Assets/Animations/"+self.animation+"/Dead.png"
         self.evadeReset = 0.2   # how long to show evade image before switching back
         self.recentEvade = self.evadeReset  # how long has it been since the last evade, defaults to max render time
 
-        #super().__init__(loaded, x, y, mode="load")
-        super().__init__(img, x, y)
+        #super().__init__(img, x, y)
         self.collidable = loaded.collidable
         self.name = loaded.name
         self.team = loaded.team
@@ -403,6 +387,12 @@ class Character(Drawable):
 
         # abilities
         self.abilities = {}  # dict keyed by casting slot   # TODO implement loadout options in loadable file
+        loadAbilities = loaded.abilities.split(",")  # loadable should have either a blank, or a comma-delimited list of abilities (by name) which this character has equipped
+        slot = 0
+        for loadAbil in loadAbilities:
+            if loadAbil != "":
+                self.abilities[slot] = loadAbil
+                slot += 1
 
         # base stats
         self.baseLife = loaded.baseLife
@@ -413,20 +403,20 @@ class Character(Drawable):
         self.baseEvasion = loaded.baseEvasion
 
         # attributes, number is points invested
-        # passive   # TODO load from file?? probably
-        self.life = 0
-        self.toughness = 0
-        self.evasion = 0
-        self.movement = 0
-        self.mana = 0
+        # passive attribute bonuses
+        self.life = loaded.life
+        self.toughness = loaded.toughness
+        self.evasion = loaded.evasion
+        self.movement = loaded.movement
+        self.mana = loaded.mana
         # active
-        self.potency = 0
-        self.duration = 0
-        self.application = 0
-        self.speed = 0
-        self.efficiency = 0
-        self.recovery = 0
-        self.subtlety = 0
+        self.potency = loaded.potency
+        self.duration = loaded.duration
+        self.application = loaded.application
+        self.speed = loaded.speed
+        self.efficiency = loaded.efficiency
+        self.recovery = loaded.recovery
+        self.subtlety = loaded.subtlety
 
         self.alive = True
         self.vulnerable = loaded.vulnerable
@@ -497,22 +487,22 @@ class Character(Drawable):
             # for now this will just switch between normal and evaded images
             if self.recentEvade < self.evadeReset:
                 self.recentEvade += frameTime
-                self.setImage(self.evadeImage)
+                self.setImage("evaded")
             else:
                 # not drawing the evade image, can check movement instead
                 diffX = self.oldX - self.locX
                 diffY = self.oldY - self.locY
                 #print(diffX, "base", self.getMoveSpeed()*frameTime, "right", self.getMoveSpeed() * -1.2 * frameTime)
-                if diffX < 0.0:#diffX < self.getMoveSpeed() * -1.2 * frameTime:  # percent movement threshold is above 1 courtesy of player movespeed bonus TODO reorganize
-                    self.setImage(self.rightImage)
-                elif diffX > 0.0:#diffX > self.getMoveSpeed() * 1.2 * frameTime:
-                    self.setImage(self.leftImage)
+                if diffX < self.getMoveSpeed() * -0.1 * frameTime:  # setting animation based on which direction is utilised the most this frame, AND if moving past a certain speed
+                    self.setImage("right")
+                elif diffX > self.getMoveSpeed() * 0.1 * frameTime:
+                    self.setImage("left")
                 else:
-                    self.setImage(self.baseImage)   # TODO retool image switching such that images are already loaded into pygame
+                    self.setImage("base")   # TODO retool image switching such that images are already loaded into pygame
         else:
             # alive is False
             #print(self.name,"is dead with limit", self.limit, "and age", self.age)
-            self.setImage(self.deadImage)
+            self.setImage("dead")
 
 
 class Player():
@@ -563,6 +553,25 @@ class Loadable(): # called Loadable because Object is a terrible name
         self.name = "BrokenFile"    # TODO error cases over here, certain fields MUST be present, name being most important
         self.alpha = False
         self.shape = "rect"
+
+        # in case of character, need these defaults
+        # passive attribute bonuses
+        self.life = 0
+        self.toughness = 0
+        self.evasion = 0
+        self.movement = 0
+        self.mana = 0
+        # active
+        self.potency = 0
+        self.duration = 0
+        self.application = 0
+        self.speed = 0
+        self.efficiency = 0
+        self.recovery = 0
+        self.subtlety = 0
+
+        self.abilities = "" # just load as a string for now, character parser can split into list form
+
         infile = open(filename, "r")
         for line in infile:
             mySplit = line.split("=")
@@ -585,9 +594,9 @@ class Loadable(): # called Loadable because Object is a terrible name
                 if var == "vulnerable":
                     self.vulnerable = bool(val)
                 if var == "sizeX":
-                    self.sizeX = val
+                    self.sizeX = int(val)
                 if var == "sizeY":
-                    self.sizeY = val
+                    self.sizeY = int(val)
                 if var == "animation":
                     self.animation = val
                 if var == "baseLife":
@@ -608,9 +617,57 @@ class Loadable(): # called Loadable because Object is a terrible name
                     self.alpha = bool(val)
                 if var == "shape":
                     self.shape = val
+                # attribute loading
+                if var == "life":
+                    self.life = int(val)
+                if var == "toughness":
+                    self.toughness = int(val)
+                if var == "evasion":
+                    self.evasion = int(val)
+                if var == "movement":
+                    self.movement = int(val)
+                if var == "mana":
+                    self.mana = int(val)
+                if var == "potency":
+                    self.potency = int(val)
+                if var == "duration":
+                    self.duration = int(val)
+                if var == "application":
+                    self.application = int(val)
+                if var == "efficiency":
+                    self.efficiency = int(val)
+                if var == "recovery":
+                    self.recovery = int(val)
+                if var == "subtlety":
+                    self.subtlety = int(val)
+                if var == "speed":
+                    self.speed = int(val)
+                if var == "abilities":
+                    self.abilities = val
 
 
         infile.close()
+
+        # TODO implement image loader, probably just use animation flag and have standard file loading system
+        self.imageDict = {}
+        # need to do image initialization here, since loading from file and converting to faster display format is slightly expensive
+        print("Loading images for", self.name)
+        if self.image != "None":
+            if self.alpha:
+                self.imageDict['base'] = pygame.image.load(self.image).convert_alpha()
+            else:
+                self.imageDict['base'] = pygame.image.load(self.image).convert()
+        if self.animation != "None":
+            # load other images into dictionary, save transparency
+            # look through animation folder, store loaded images by key of filename (strip the file extension)
+            for file in os.listdir("Assets/Animations/" + self.animation):
+                key = file.split(".")[0].lower()    # only want first name in file, don't use multiple .'s in name
+                loadedImage = pygame.image.load("Assets/Animations/"+self.animation+"/"+file)
+                if self.alpha:
+                    self.imageDict[key] = loadedImage.convert_alpha()
+                else:
+                    self.imageDict[key] = loadedImage.convert()
+
     # could redo collision check for rectangles instead of circles
     # with everything being checked by a center position + radius, map would look more like tokens instead of actual buildings
     # need both rectangles and circles, maybe even rectangles which aren't axis-bound (for line based skill shapes, potentially cones)
@@ -683,21 +740,24 @@ class Map():
 
         self.image = pygame.image.load("Assets/Maps/"+self.background).convert() # TODO rescale image to match width and height
         # map background image cannot have alpha
-        # TODO alpha flag on other drawables, since non-alpha draws are much faster
-        # TODO load and convert all images BEFORE gameplay, no loading files mid game
         self.width, self.height = self.image.get_size() # atm just overwriting width and height with image size
 
     def addDraw(self, draw):
         self.draws.append(draw)
 
-    def findValidTargets(self, targetX, targetY, radius, teamType, teamMatch):
+    def findValidTargets(self, targetX, targetY, radius, teamType, teamMatch, frameTime):
         validTargets = []
+        # create a temp draw for collision check
+        myTempDraw = Drawable("Assets/BlankBase.png", targetX, targetY)
+        myTempDraw.setBounds(radius, radius)
         for draw in self.draws:
             if isinstance(draw, Character):
                 validTarget = False
                 # distance check, just use circles for now
-                dist = math.sqrt((targetX - draw.locX) ** 2 + (targetY - draw.locY) ** 2) - draw.collisionRadius
-                if dist <= radius:
+                colTimes = checkTwoCollidableRectangles(myTempDraw, draw, frameTime)
+                if colTimes[0] is not None and colTimes[1] is not None:
+                #dist = math.sqrt((targetX - draw.locX) ** 2 + (targetY - draw.locY) ** 2) - draw.collisionRadius
+                #if dist <= radius:
                     # print("Character is close enough", self.team)
                     if teamType == "all":
                         validTarget = True
