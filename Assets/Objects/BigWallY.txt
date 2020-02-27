@@ -1,0 +1,9 @@
+name=BigWallY
+team=map
+vulnerable=True
+sizeX=20
+sizeY=80
+image=Assets/Images/BigWall.png
+collidable=True
+baseLife=500
+shape=rect

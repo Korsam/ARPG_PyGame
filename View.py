@@ -78,8 +78,6 @@ playerSwordTime = 0.0
 
 currentMap = level1
 
-#playerCharacter = Loadable("Assets/Characters/TestChar.txt")
-#evilGrunt = Loadable("Assets/Characters/EnemyGrunt.txt")    # TODO replace hard-coded loadables with dynamic dictionary entries
 #print("Loaded characters:", loadedCharacters)
 testChar = Character(loadedCharacters["Jeff"], currentMap.loadX, currentMap.loadY) # TODO player control should be established via team or name matching player current character field TBD
 #testChar.move(80, 160)
@@ -94,6 +92,7 @@ lifeBarFill = Drawable("Assets/UI/LifeBarFull.png", 0, 0)
 abilityBox = pygame.image.load("Assets/UI/BaseAbilitySlot.png").convert_alpha()
 highlightBox = pygame.image.load("Assets/UI/HighlightedAbilitySlot.png").convert_alpha()
 highlightedAbility = 0
+cooldownBox = pygame.image.load("Assets/UI/AbilityCooldown.png").convert_alpha()    # definitely want alpha on this one
 
 # science values
 #testChar.toughness += 5
@@ -251,7 +250,7 @@ while running:
         moveY = False
         playerSpeed = testChar.getMoveSpeed()  #testChar.baseMove * (1.1 ** testChar.movement)
         boost = math.sqrt(playerSpeed*playerSpeed*2)-playerSpeed
-        if keyW:    # TODO reconfigure player movement math (direction via angles instead of 8 direction setup)
+        if keyW:
             moveY = True
             testChar.velY = 0 - playerSpeed
             # bonus speed if only moving on a cardinal axis
@@ -365,21 +364,24 @@ while running:
                 #newProjectile = testFireBall.cast(testChar, targetX, targetY)
                 newProjectile = abilityDictionary[testChar.abilities[highlightedAbility]].cast(testChar, targetX, targetY)
                 if not newProjectile:
-                    print("Not enough mana", testChar.currentMana)
+                    print("Player failed to cast", testChar.abilities[highlightedAbility])
+                    # TODO put feedback into the UI when casting fails, probably by having newProjectile replaced with an error type first
+                    # possible error cases: caster lacks mana, ability on cooldown, no valid targets? (maybe out of range, TODO change range limit to force casting to target within a distance)
+                    #print("Not enough mana", testChar.currentMana)
                 else:
                     currentMap.addDraw(newProjectile)
-            elif right:
+            '''elif right:
                 newProjectile = acidPit.cast(testChar, targetX, targetY)
                 #newProjectile = testSword.cast(testChar, targetX, targetY)
                 if not newProjectile:
                     print("Not enough mana", testChar.currentMana)
                     #print("Target out of range")
-                else:   # TODO dynamic ability cooldown solution
+                else:
                     if playerSwordTime > 0.0:
                         print("Attack on cooldown")
                     else:
                         currentMap.addDraw(newProjectile)
-                        playerSwordTime = 1.0
+                        playerSwordTime = 1.0'''
 
         if playerSwordTime > 0.0:
             playerSwordTime -= frameTime
@@ -636,10 +638,23 @@ while running:
         numAbilities = len(list(testChar.abilities.keys()))
         curAbilityNum = 0
         while curAbilityNum < numAbilities:
+            dispX = display_width/2-(boxWidth*numAbilities)/2+boxWidth*curAbilityNum
+            dispY = display_height-2*boxHeight
             if curAbilityNum == highlightedAbility:
-                gameDisplay.blit(highlightBox, (display_width/2-(boxWidth*numAbilities)/2+boxWidth*curAbilityNum, display_height-2*boxHeight))
+                gameDisplay.blit(highlightBox, (dispX, dispY))
             else:
-                gameDisplay.blit(abilityBox, (display_width/2-(boxWidth*numAbilities)/2+boxWidth*curAbilityNum, display_height-2*boxHeight))
+                gameDisplay.blit(abilityBox, (dispX, dispY))
+            abilityName = testChar.abilities[curAbilityNum]
+            # TODO render ability icon here
+
+            # check if ability is on cooldown, then draw cooldownBox scaled along height to match percentage of cooldown remaining
+            if testChar.cooldowns[abilityName] > 0.0:
+                # cooldown is active
+                percentRemaining = testChar.cooldowns[abilityName] / abilityDictionary[abilityName].getMaxCooldown(testChar)
+                actualHeight = int(percentRemaining * boxHeight) # TODO fix for edge case when cooldown exceeds normal max AKA cooldown changing dynamically
+                newCooldownBox = pygame.transform.scale(cooldownBox, (boxWidth, actualHeight))
+                gameDisplay.blit(newCooldownBox, (dispX, dispY+(boxHeight-actualHeight)))
+
             curAbilityNum += 1
 
 

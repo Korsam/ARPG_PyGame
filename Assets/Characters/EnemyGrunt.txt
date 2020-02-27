@@ -1,0 +1,12 @@
+name=Grunt
+team=enemy
+animation=EnemyGrunt
+behavior=aggressive
+abilities=Fireball,Sword
+sizeX=60
+sizeY=80
+baseMovement=100
+baseLife=100
+baseMana=300
+vulnerable=True
+collidable=True

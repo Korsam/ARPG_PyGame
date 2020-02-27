@@ -1,0 +1,12 @@
+name=Jeff
+team=Player
+animation=TestChar
+behavior=player
+abilities=Fireball,Sword,AcidPit
+sizeX=60
+sizeY=80
+baseMovement=100
+baseLife=500
+baseMana=500
+vulnerable=True
+collidable=True

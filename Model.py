@@ -154,10 +154,20 @@ class Ability():
         if not caster.alive:
             return False
         #print(caster.name, "cast", self.name)
+        # verify caster is allowed this spell, for error catching
+        if self.name not in caster.cooldowns.keys():
+            print(caster.name,"does not know", self.name, "but was trying to cast it")
+            return False
         # TODO cost mana and activate cooldown on caster
+        # check cooldown for this ability and caster, then check mana cost
+        # return false if either condition fails
+        if caster.cooldowns[self.name] > 0.0:
+            return False
         manaCost = self.baseCost/(BASE**(caster.efficiency*self.scaleEfficiency))
         if caster.currentMana < manaCost:
             return False
+        # cooldown check passed and mana cost is available, set cooldown start and spend the mana
+        caster.cooldowns[self.name] = self.getMaxCooldown(caster)
         caster.currentMana -= manaCost
         # TOOD implement
         # need to create a drawable which contains all needed info (link to caster for dynamic attributes)
@@ -200,6 +210,9 @@ class Ability():
             # need to make a special kind of drawable subclass, which contains a reference to caster and ability data, something which inherits from both ability and drawable?
             triggerDraw = Effect(str(self.draws[0]), targetX, targetY, caster, self, map)
             return triggerDraw
+
+    def getMaxCooldown(self, caster):
+        return self.baseCooldown / (BASE ** (caster.recovery * self.scaleRecovery))
 
 class Drawable():
     def __init__(self, dat, x, y, mode="img"):
@@ -386,13 +399,17 @@ class Character(Drawable):
         self.equipped = {}  # dict keyed by gear slot
 
         # abilities
-        self.abilities = {}  # dict keyed by casting slot   # TODO implement loadout options in loadable file
+        self.abilities = {}  # dict keyed by casting slot
         loadAbilities = loaded.abilities.split(",")  # loadable should have either a blank, or a comma-delimited list of abilities (by name) which this character has equipped
         slot = 0
         for loadAbil in loadAbilities:
             if loadAbil != "":
                 self.abilities[slot] = loadAbil
                 slot += 1
+        self.cooldowns = {}  # dict keyed by ability name, values are cooldown time remaining for given ability (default to 0)
+        for slot in self.abilities.keys():
+            print("Adding cooldown for",self.abilities[slot], "in slot", slot, "for character", self.name)
+            self.cooldowns[self.abilities[slot]] = 0.0
 
         # base stats
         self.baseLife = loaded.baseLife
@@ -503,6 +520,14 @@ class Character(Drawable):
             # alive is False
             #print(self.name,"is dead with limit", self.limit, "and age", self.age)
             self.setImage("dead")
+
+        # TODO consider moving cooldown handler to its own function, though animate has the right context. Maybe rename?
+        # tick cooldowns
+        for abil in self.cooldowns.keys():
+            if self.cooldowns[abil] > 0.0:
+                self.cooldowns[abil] -= frameTime
+            if self.cooldowns[abil] < 0.0:
+                self.cooldowns[abil] = 0.0
 
 
 class Player():
