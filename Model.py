@@ -137,12 +137,17 @@ class Ability():
                     self.preview = val
 
         infile.close()
-        if self.animation != "none":
+        # use LoadedImages class to get animation for us (contains imageDict, keyed by filename)
+        if self.animation != "None":
+            self.myLoadedImages = LoadImages(self.animation, alpha=True)
             # load images from animation folder into draws
+            # TODO cleanup older code, addDraw doesn't fit new design concept
             for img in os.listdir("Assets/Animations/"+self.animation):
                 self.addDraw("Assets/Animations/"+self.animation+"/"+img)
                 #print("Loading", img, "from", self.animation, "for ability", self.name)
         #print("Initalized ability", self.name)
+        else:
+            self.myLoadedImages = {}    # TODO this is more of an error case, needs handled as such
 
     def addDraw(self, draw):
         #print("Adding", draw, "for", self.name)
@@ -202,20 +207,22 @@ class Ability():
             for target in validTargets:
                 target.damage(self.baseDamage * BASE ** (caster.potency * self.scalePotency), self.evasionEffect, self.armorEffect)
             # draw it!
-            triggerDraw = Drawable(self.draws[0], targetX, targetY)
+            # TODO change LoadedImages class into function
+            triggerDraw = Drawable(self.draws[0], targetX, targetY, preloadedDict=self.myLoadedImages)
             triggerDraw.setScale(actualSize)
             triggerDraw.setLimit(0.3)   # use default 0.3 second animation time
+            triggerDraw.animation = self.animation
             return triggerDraw
-        else:
+        else:   # TODO both effect and standard drawable variants here are not attempting to load animations
             # need to make a special kind of drawable subclass, which contains a reference to caster and ability data, something which inherits from both ability and drawable?
-            triggerDraw = Effect(str(self.draws[0]), targetX, targetY, caster, self, map)
+            triggerDraw = Effect(str(self.draws[0]), targetX, targetY, caster, self, map, preloadedImageDict=self.myLoadedImages)
             return triggerDraw
 
     def getMaxCooldown(self, caster):
         return self.baseCooldown / (BASE ** (caster.recovery * self.scaleRecovery))
 
 class Drawable():
-    def __init__(self, dat, x, y, mode="img"):
+    def __init__(self, dat, x, y, mode="img", preloadedDict=None):
         if mode == "img":      # TODO reconfigure img based constructor, specifically the scale and size fields
             self.scale = 40
             self.age = 0.0
@@ -225,8 +232,12 @@ class Drawable():
             self.alpha = False  # TODO store loaded images from animation folder as specific vars (no loading after initialization, could inherit loaded images from Loadable)
             # TODO reconfigure drawable use cases to always use a loadable which has preloaded and converted images
             self.imageDict = {}
-            self.imageDict['base'] = pygame.image.load(dat).convert()
-            self.image = self.imageDict['base']
+            if preloadedDict is None:
+                self.imageDict['base'] = pygame.image.load(dat).convert()
+                self.image = self.imageDict['base']
+            else:
+                self.imageDict = preloadedDict
+                self.image = preloadedDict[list(preloadedDict.keys())[0]]
             self.locX = float(x)
             self.locY = float(y)
             self.boundX, self.boundY = self.image.get_size()
@@ -244,6 +255,8 @@ class Drawable():
             self.baseToughness = 1.0
             self.baseEvasion = 1.0
             self.baseMovement = 0.0
+            self.animationTime = 0.0
+            self.animationSpeed = 2.0
         elif mode == "load":
             # use a loadable to fill values instead
             assert isinstance(dat, Loadable), "Drawable given non-loadable data"
@@ -271,6 +284,8 @@ class Drawable():
             self.image = self.imageDict['base']
             self.boundX, self.boundY = self.image.get_size()
             self.setBounds(dat.sizeX, dat.sizeY)
+            self.animationTime = 0.0
+            self.animationSpeed = 2.0   # TODO load this from file, number of times to cycle through full animation per second
         # starting velocities should always be zero at this stage, projectile and character classes can change this after super is called
         self.velX = 0.0
         self.velY = 0.0
@@ -308,9 +323,18 @@ class Drawable():
         self.locX = newX
         self.locY = newY
 
+    def animate(self, frameTime):
+        # if animation set is available, flip through imageDict based on animation play speed setting
+        myKeyList = list(self.imageDict.keys())
+        #print("animate", self.animationTime, "with", list(self.imageDict.keys()), "and speed", self.animationSpeed)
+        curIndex = int((len(myKeyList)*(self.animationTime*self.animationSpeed)) % len(myKeyList))
+        #print("now using", curIndex)
+        self.setImage(myKeyList[curIndex])
+        self.animationTime += frameTime
+
 class Effect(Drawable):
-    def __init__(self, img, x, y, caster, ability, map):
-        super().__init__(img, x, y)
+    def __init__(self, img, x, y, caster, ability, map, preloadedImageDict):
+        super().__init__(img, x, y, preloadedDict=preloadedImageDict)
         self.setScale(ability.baseRadius*BASE**(caster.application*ability.scaleApplication))
         self.caster = caster
         self.ability = ability
@@ -325,10 +349,16 @@ class Effect(Drawable):
         # also apply slow, speed, whatever other continuous effects here    TODO
 
         # also a good time to switch images
-        self.time += frameTime  # TODO animation speed modifier, 2.0 means animation cycle will play two times per second
-        # use time % len(draws) to determine which image to use
-        drawNum = int(self.time % len(self.imageDict.keys()))
+        # animation speed modifier, 2.0 means animation cycle will play two times per second
+        usedTime = self.time * self.animationSpeed
+        myKeyList = list(self.imageDict.keys())
+        # use Drawable's imageDict for available images. Effects run through all images in a given directory
+        drawNum = int((len(myKeyList)*usedTime) % len(myKeyList))
+        #print("Effect", myKeyList, "iter", drawNum, "at", usedTime)
         self.setImage(list(self.imageDict.keys())[drawNum])
+
+        # increment time
+        self.time += frameTime
 
 
 class Projectile(Drawable):
@@ -558,7 +588,6 @@ class Item():
 class Loadable(): # called Loadable because Object is a terrible name
     # a Loadable contains info loaded from a config file for a drawable TYPE (something which might have multiple instances in a given map)
     # Loadable objects should only be used to create Drawables, not treated as Drawables themselves
-    # TODO follow this with volatile projectile implementation
     # character's should inherit from loadable (use a loadable's data in constructor, don't inherit since loaded values are shared)
     def __init__(self, filename):
         # load data from file
@@ -673,7 +702,7 @@ class Loadable(): # called Loadable because Object is a terrible name
 
         infile.close()
 
-        # TODO implement image loader, probably just use animation flag and have standard file loading system
+        # image loader, probably just use animation flag and have standard file loading system
         self.imageDict = {}
         # need to do image initialization here, since loading from file and converting to faster display format is slightly expensive
         print("Loading images for", self.name)
@@ -696,6 +725,20 @@ class Loadable(): # called Loadable because Object is a terrible name
     # could redo collision check for rectangles instead of circles
     # with everything being checked by a center position + radius, map would look more like tokens instead of actual buildings
     # need both rectangles and circles, maybe even rectangles which aren't axis-bound (for line based skill shapes, potentially cones)
+
+def LoadImages(dirName, alpha=False):
+        imageDict = {}
+        # need to do image initialization here, since loading from file and converting to faster display format is slightly expensive
+        # load other images into dictionary, save transparency
+        # look through animation folder, store loaded images by key of filename (strip the file extension)
+        for file in os.listdir("Assets/Animations/" + dirName):
+            key = file.split(".")[0].lower()  # only want first name in file, don't use multiple .'s in name
+            loadedImage = pygame.image.load("Assets/Animations/" + dirName + "/" + file)
+            if alpha:
+                imageDict[key] = loadedImage.convert_alpha()
+            else:
+                imageDict[key] = loadedImage.convert()
+        return imageDict
 
 class Map():
     def __init__(self, dataFile, objectDict, characterDict):

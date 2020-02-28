@@ -554,6 +554,8 @@ while running:
                     draw.setLimit(-1)   # set limit to queue for removal later in frame
                     projectileDraws.pop()
             else:
+                if draw.animation != "None":
+                    draw.animate(frameTime)
                 genericDraws.append(iter)
                 #gameDisplay.blit(draw.image, (offX+int(draw.locX-draw.boundX/2), offY+int(draw.locY-draw.boundY/2)))
             #print("Draw age", draw.age)
